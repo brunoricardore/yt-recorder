@@ -6,14 +6,10 @@ const ffmpeg = require('fluent-ffmpeg');
 const ytdl = require('ytdl-core');
 
 
-// 1080p
+// 720
 let livestreamUrl = '';
 
-
-//720p
-const livestreamUrl2 = 'https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1724359379/ei/c07HZujbJNCS-LAPvrfJiA0/ip/191.35.234.177/id/MouIUCFwdRs.1/itag/95/source/yt_live_broadcast/requiressl/yes/ratebypass/yes/live/1/sgoap/gir%3Dyes%3Bitag%3D140/sgovp/gir%3Dyes%3Bitag%3D136/rqh/1/hdlc/1/hls_chunk_host/rr3---sn-b8u-nw3e.googlevideo.com/xpc/EgVo2aDSNQ%3D%3D/playlist_duration/30/manifest_duration/30/spc/Mv1m9ldh6dvp3Qdmi-uCc_ijACA31C0VY6Xi9dP6-6qbvrKBo-vsf8NxfJwSmpM/vprv/1/playlist_type/DVR/initcwndbps/826250/mh/r6/mm/44/mn/sn-b8u-nw3e/ms/lva/mv/m/mvi/3/pl/21/dover/11/pacing/0/keepalive/yes/mt/1724337650/sparams/expire,ei,ip,id,itag,source,requiressl,ratebypass,live,sgoap,sgovp,rqh,hdlc,xpc,playlist_duration,manifest_duration,spc,vprv,playlist_type/sig/AJfQdSswRQIgIdNzfrN_OUb7nmJIPFWYxo0qyfaDzOy8P8o_Ih0sVMcCIQD8xfNMakO1q26sM_LQEObZTPdTFF3Eh4FNRPWo-5SSQw%3D%3D/lsparams/hls_chunk_host,initcwndbps,mh,mm,mn,ms,mv,mvi,pl/lsig/AGtxev0wRQIgPX7eD4tzXR56AbcwYZKhx35cVJ_sqrdNujhGloisd9kCIQD03ZE6y99rxX3t8wpyiw8kpeoPVjbBvZxGJQWsYubozA%3D%3D/playlist/index.m3u8';
-
-const baseOutputDirectory = 'D:\\BUIU-TENNIS-VIDEOS';
+const baseOutputDirectory = './BUIU-TENNIS-VIDEOS';
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -36,9 +32,6 @@ const getCurrentDate = () => {
 };
 
 const getCurrentHour = () => new Date().getHours(); // Current hour in 24-hour format
-
-const getCurrentDayOfWeek = () => new Date().getDay(); // 0: Sunday, 1: Monday, ..., 6: Saturday
-
 
 const generatePrefix = () => {
     const dayOfWeek = new Date().getDay(); // 0: Sunday, 1: Monday, ..., 6: Saturday
@@ -67,7 +60,6 @@ const startLiveServer = () => {
     const scheduler = new Scheduler(videoExtractor);
 
     scheduler.start();
-    getHLSURL();
 
     http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -98,31 +90,56 @@ class Scheduler {
         this.videoExtractor = videoExtractor;
     }
 
-    start() {
-        cron.schedule('0 7-22 * * 1-5', () => {
-            console.log(getDayLogMessage());
-            this.videoExtractor.extractHourSegment();
-        });
+    async start() {
 
-        // cron.schedule('29 * * * 1-5', () => {
-        //     console.log(getDayLogMessage());
+        if (livestreamUrl === '' || lastTimeStamp === 0 ) {
+            await getHLSURL();
+        }
+
+        // this.videoExtractor.extractHourSegment();
+
+        // cron.schedule('*/3 * * * *', () => {
+        //     console.log('Running extractHourSegment');
         //     this.videoExtractor.extractHourSegment();
         // });
 
-        cron.schedule('0 */5 * * *', () => {
-            console.log('Running M3U8 URL update');
-            getHLSURL();
+        cron.schedule('0 7-22 * * 1-5', () => {
+            setTimeout(() => {
+                console.log(getDayLogMessage());
+                this.videoExtractor.extractHourSegment();
+            }, 20_000);
         });
+
+        // cron.schedule('0 */5 * * *', () => {
+        //     console.log('Running M3U8 URL update');
+        //     getHLSURL();
+        // });
     }
 }
 
 // Class handling video extraction
 class VideoExtractor {
     // Method to build and execute FFmpeg command
-    extractHourSegment() {
+    async extractHourSegment() {
 
-        console.log('video URL');
-        console.log(livestreamUrl);
+        const dateNow = new Date();
+        const nowTimestamp = dateNow.getTime();
+
+        // console.log(lastTimeStamp, nowTimestamp);
+
+        if (livestreamUrl === ''
+            ||
+            lastTimeStamp > nowTimestamp
+        ) {
+            logMessage(`should request new hls request`);
+            await getHLSURL();
+        }
+
+        const getCurrentHour = () => new Date().getHours(); // Current hour in 24-hour format
+        const getCurrentMinute = () => new Date().getMinutes(); // Current minute
+
+        const formatHour = (hour) => (hour < 10 ? `0${hour}` : hour);
+        const formatMinute = (minute) => (minute < 10 ? `0${minute}` : minute);
 
         const hour = getCurrentHour();
 
@@ -130,12 +147,12 @@ class VideoExtractor {
         const outputDir = path.join(baseOutputDirectory, currentDate);
         createDirectoryIfNotExists(outputDir);
 
-        const outputFileName = path.join(outputDir, `${generatePrefix()}_${formatHour(hour)}hrs.mp4`);
+        const outputFileName = path.join(outputDir, `${generatePrefix()}_${formatHour(hour)}__${nowTimestamp}.mp4`);
 
         ffmpeg(livestreamUrl)
             .setFfmpegPath(require('ffmpeg-static'))
             // .setStartTime(startTime)
-            .duration(3600) // Duration is 1 hour
+            .duration(3590) // Duration is 1 hour
             // .duration(120) // Duration is 2 minutes
             .output(outputFileName)
             .on('start', (commandLine) => {
@@ -143,7 +160,7 @@ class VideoExtractor {
                 // logMessage(`FFmpeg command line: ${commandLine}`);
             })
             .on('progress', (progress) => {
-                // logMessage(`Processing progress: ${progress.percent}% done`);
+                console.log(`[${formatHour(hour)}:${formatMinute(getCurrentMinute())}] Recording progress: ${progress.timemark}`);
             })
             .on('end', () => {
                 logMessage('Finished processing.');
@@ -159,24 +176,23 @@ class VideoExtractor {
 }
 
 const VIDEO_URL = 'https://www.youtube.com/watch?v=MouIUCFwdRs';
+let lastTimeStamp = 0;
 
-function getHLSURL() {
-    try {
+async function getHLSURL() {
+    const info = await ytdl.getInfo(VIDEO_URL);
+    const formats = ytdl.filterFormats(info.formats, 'audioandvideo');
+    const m3u8Format = formats.find(format => format.qualityLabel.includes('720'));
 
-        ytdl.getInfo(VIDEO_URL)
-            .then(info => {
-                const formats = ytdl.filterFormats(info.formats, 'audioandvideo');
-                const m3u8Format = formats.find(format => format.qualityLabel.includes('720'));
+    if (!m3u8Format) throw new Error('No Format available');
 
-                if (!m3u8Format) throw new Error('No Format available')
 
-                logMessage('Format found', + m3u8Format.qualityLabel);
-                livestreamUrl = m3u8Format.url;
-            })
+    logMessage('Format found', + m3u8Format.qualityLabel);
+    livestreamUrl = m3u8Format.url;
 
-    } catch (err) {
-        console.log(err);
-    }
+    const expireMatch = livestreamUrl.match(/\/expire\/(\d+)/);
+    const expireNumber = expireMatch ? expireMatch[1] : null;
+
+    lastTimeStamp = expireNumber * 1000;
 }
 
 startLiveServer();
